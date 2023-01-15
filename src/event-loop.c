@@ -971,7 +971,8 @@ wl_event_loop_dispatch_idle(struct wl_event_loop *loop)
 	}
 }
 
-/** Wait for events and dispatch them
+
+/** Wait for events and dispatch them without processing idle events
  *
  * \param loop The event loop whose sources to wait for.
  * \param timeout The polling timeout in milliseconds.
@@ -982,24 +983,14 @@ wl_event_loop_dispatch_idle(struct wl_event_loop *loop)
  * expires. A timeout of -1 disables the timeout, causing the function to block
  * indefinitely. A timeout of zero causes the poll to always return immediately.
  *
- * All idle sources are dispatched before blocking. An idle source is destroyed
- * when it is dispatched. After blocking, all other ready sources are
- * dispatched. Then, idle sources are dispatched again, in case the dispatched
- * events created idle sources. Finally, all sources marked with
- * wl_event_source_check() are dispatched in a loop until their dispatch
- * functions all return zero.
- *
  * \memberof wl_event_loop
  */
 WL_EXPORT int
-wl_event_loop_dispatch(struct wl_event_loop *loop, int timeout)
-{
+wl_event_loop_dispatch_no_idle(struct wl_event_loop *loop, int timeout) {
 	struct epoll_event ep[32];
 	struct wl_event_source *source;
 	int i, count;
 	bool has_timers = false;
-
-	wl_event_loop_dispatch_idle(loop);
 
 	count = epoll_wait(loop->epoll_fd, ep, ARRAY_LENGTH(ep), timeout);
 	if (count < 0)
@@ -1029,9 +1020,53 @@ wl_event_loop_dispatch(struct wl_event_loop *loop, int timeout)
 
 	wl_event_loop_process_destroy_list(loop);
 
+	return 0;
+}
+
+/** Handle any pending event sources marked with wl_event_source_check()
+ *
+ * \param loop The event loop whose sources to check.
+ *
+ * \memberof wl_event_loop
+ */
+WL_EXPORT void
+wl_event_loop_check(struct wl_event_loop *loop) {
+	while (post_dispatch_check(loop));
+}
+
+/** Wait for events and dispatch them
+ *
+ * \param loop The event loop whose sources to wait for.
+ * \param timeout The polling timeout in milliseconds.
+ * \return 0 for success, -1 for polling (or timer update) error.
+ *
+ * All the associated event sources are polled. This function blocks until
+ * any event source delivers an event (idle sources excluded), or the timeout
+ * expires. A timeout of -1 disables the timeout, causing the function to block
+ * indefinitely. A timeout of zero causes the poll to always return immediately.
+ *
+ * All idle sources are dispatched before blocking. An idle source is destroyed
+ * when it is dispatched. After blocking, all other ready sources are
+ * dispatched. Then, idle sources are dispatched again, in case the dispatched
+ * events created idle sources. Finally, all sources marked with
+ * wl_event_source_check() are dispatched in a loop until their dispatch
+ * functions all return zero.
+ *
+ * \memberof wl_event_loop
+ */
+WL_EXPORT int
+wl_event_loop_dispatch(struct wl_event_loop *loop, int timeout)
+{
+	int dispatch_result;
+
 	wl_event_loop_dispatch_idle(loop);
 
-	while (post_dispatch_check(loop));
+	dispatch_result = wl_event_loop_dispatch_no_idle(loop, timeout);
+	if (dispatch_result != 0) return dispatch_result;
+
+	wl_event_loop_dispatch_idle(loop);
+
+	wl_event_loop_check(loop);
 
 	return 0;
 }

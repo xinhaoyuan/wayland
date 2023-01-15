@@ -164,6 +164,12 @@ wl_event_source_check(struct wl_event_source *source);
 int
 wl_event_loop_dispatch(struct wl_event_loop *loop, int timeout);
 
+int
+wl_event_loop_dispatch_no_idle(struct wl_event_loop *loop, int timeout);
+
+void
+wl_event_loop_check(struct wl_event_loop *loop);
+
 void
 wl_event_loop_dispatch_idle(struct wl_event_loop *loop);
 
